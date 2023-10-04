@@ -1,27 +1,18 @@
 import axios from 'axios';
+import { removeDuplicates, changeTime } from './utils';
+
+require('dotenv').config()
+
+const API_URL = process.env.API_URL;
 
 class SyncFili {
-  public async execute(): Promise<void> {
+  async execute() {
     try {
       const listInsert = [];
       const listUpdate = [];
 
-      async function getFiliDest() {
-        const response = await axios.get (
-          `http://127.0.0.1:3001/filiais/select`
-        );
-        return response.data;
-      }
-
-      async function getFiliSrc() {
-        const response = await axios.get (
-          `url_api_bussines`  // Substitua pela URL correta da API de filiais
-        );
-        return response.data;
-      }
-
-      const selectSrc = await getFiliSrc();
-      const selectDest = await getFiliDest();
+      const selectSrc = await this.getFiliSrc();
+      const selectDest = await this.getFiliDest();
 
       for (const itemSrc of selectSrc) {
         if (selectDest.length === 0) {
@@ -36,8 +27,8 @@ class SyncFili {
           if (!itemDest) {
             listInsert.push(itemSrc);
           } else if (
-            this.changeTime(itemSrc.updated_at) !==
-            this.changeTime(itemDest.updated_at)
+            changeTime(itemSrc.updated_at) !==
+            changeTime(itemDest.updated_at)
           ) {
             listUpdate.push(itemSrc);
           }
@@ -47,63 +38,11 @@ class SyncFili {
       console.log("Iniciando o sync das filiais");
 
       if (listInsert.length > 0) {
-        for (const row of this.removeDuplicates(listInsert)) {
-          const dataInsert = {
-            coddomi: row.coddomi,
-            cnpfili: row.cnpfili,
-            id_fili: row.id_fili,
-          };
-
-          const config = {
-            method: "post",
-            maxBodyLength: Infinity,
-            url: `http://127.0.0.1:3001/filiais/enviar`,
-            headers: {
-              "Content-Type": "application/json",
-            },
-            data: dataInsert,
-          };
-
-          try {
-            await axios(config);
-          } catch (e) {
-            console.error(
-              `Erro ao inserir registro: ${JSON.stringify(dataInsert)}`
-            );
-            console.error(`Detalhes do erro: ${e}`);
-          }
-        }
+        await this.insertFili(listInsert);
       }
 
       if (listUpdate.length > 0) {
-        for (const row of this.removeDuplicates(listUpdate)) {
-          const itemFound = selectDest.find(
-            (itemDois) =>
-              itemDois.coddomi === row.coddomi && itemDois.id_fili === row.id_fili
-          );
-
-          const config = {
-            method: "put",
-            maxBodyLength: Infinity,
-            url: `http://127.0.0.1:3001/filiais/${itemFound?.id}`,
-            headers: {
-              "Content-Type": "application/json",
-            },
-            data: {
-              coddomi: row.coddomi,
-              cnpfili: row.cnpfili,
-              id_fili: row.id_fili,
-            },
-          };
-
-          try {
-            await axios(config);
-            console.log(`Registro atualizado com sucesso: ${row.coddomi}`);
-          } catch (e) {
-            console.error(`Erro ao atualizar registro: ${row.coddomi}`);
-            console.error(`Detalhes do erro: ${e}`);
-          }
-        }
+        await this.updateFili(listUpdate, selectDest);
       }
 
       console.log("Sincronização das filiais finalizada");
@@ -112,18 +51,74 @@ class SyncFili {
     }
   }
 
-  public removeDuplicates(listInsert) {
-    return listInsert
-      .map((item) => JSON.stringify(item))
-      .filter((item, index, self) => self.indexOf(item) === index)
-      .map((item) => JSON.parse(item));
+  async getFiliDest() {
+    const response = await axios.get(`${API_URL}/filiais/select`);
+    return response.data;
   }
 
-  public changeTime(date) {
-    if (date !== null) {
-      return "'" + new Date(date).toISOString() + "'";
+  async getFiliSrc() {
+    const response = await axios.get('url_api_bussines');
+    return response.data;
+  }
+
+  async insertFili(listInsert) {
+    for (const row of removeDuplicates(listInsert)) {
+      const dataInsert = {
+        coddomi: row.coddomi,
+        cnpfili: row.cnpfili,
+        id_fili: row.id_fili,
+      };
+
+      const config = {
+        method: "post",
+        maxBodyLength: Infinity,
+        url: `${API_URL}/filiais/enviar`,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        data: dataInsert,
+      };
+
+      try {
+        await axios(config);
+      } catch (e) {
+        console.error(
+          `Erro ao inserir registro: ${JSON.stringify(dataInsert)}`
+        );
+        console.error(`Detalhes do erro: ${e}`);
+      }
     }
-    return null;
+  }
+
+  async updateFili(listUpdate, selectDest) {
+    for (const row of removeDuplicates(listUpdate)) {
+      const itemFound = selectDest.find(
+        (itemDois) =>
+          itemDois.coddomi === row.coddomi && itemDois.id_fili === row.id_fili
+      );
+
+      const config = {
+        method: "put",
+        maxBodyLength: Infinity,
+        url: `${API_URL}/filiais/${itemFound?.id}`,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        data: {
+          coddomi: row.coddomi,
+          cnpfili: row.cnpfili,
+          id_fili: row.id_fili,
+        },
+      };
+
+      try {
+        await axios(config);
+        console.log(`Registro atualizado com sucesso: ${row.coddomi}`);
+      } catch (e) {
+        console.error(`Erro ao atualizar registro: ${row.coddomi}`);
+        console.error(`Detalhes do erro: ${e}`);
+      }
+    }
   }
 }
 
